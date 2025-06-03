@@ -60,18 +60,12 @@
               <input type="hidden" name="ticket_id" value="{{ ticket.id }}" />
 
               <div class="mb-3">
-                <input type="text" name="title" class="form-control" value="{{ ticket.title }}" required />
+                <input type="text" name="title" class="form-control" value="{{ ticket.title }}"  />
               </div>
               <div class="mb-3">
                 <textarea name="description" class="form-control" rows="3" required>{{ ticket.description }}</textarea>
               </div>
-              <div class="mb-3">
-                <select name="status" class="form-select" required>
-                  <option value="Open" {% if ticket.status == 'Open' %}selected{% endif %}>Open</option>
-                  <option value="In Progress" {% if ticket.status == 'In Progress' %}selected{% endif %}>In Progress</option>
-                  <option value="Closed" {% if ticket.status == 'Closed' %}selected{% endif %}>Closed</option>
-                </select>
-              </div>
+          
               <div class="mb-3">
                 <select name="category_id" class="form-select" required>
                   {% for category in categories %}

@@ -32,6 +32,7 @@ class Ticket(db.Model):
 
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     category_id = db.Column(db.Integer, db.ForeignKey('category.id'), nullable=False)
+    created_by = db.Column(db.String(50), default='user')
 
     user = relationship('User', back_populates='tickets')
     category = relationship('Category', back_populates='tickets')

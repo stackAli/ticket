@@ -3,6 +3,9 @@ from flask_login import LoginManager, login_user, logout_user, current_user, log
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime
 from models import User, Ticket, Comment, Category, db
+from flask_migrate import Migrate
+
+
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your_secret_key'
@@ -10,7 +13,7 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///support.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db.init_app(app)
-
+migrate = Migrate(app, db)
 login_manager = LoginManager(app)
 login_manager.login_view = 'home'
 
@@ -130,14 +133,7 @@ def dashboard():
         return redirect(url_for('admin_dashboard'))
     else:
         return redirect(url_for('user_dashboard'))
-@app.route('/delete_comment/<int:comment_id>', methods=['POST'])
-@login_required
-def delete_comment(comment_id):
-    comment = Comment.query.get_or_404(comment_id)
-    db.session.delete(comment)  # delete the comment object
-    db.session.commit()
-    flash('Comment deleted successfully.', 'success')
-    return redirect(url_for('admin_dashboard'))
+
 
 @app.route('/admin/dashboard', methods=['GET', 'POST'])
 @login_required
@@ -255,85 +251,131 @@ def admin_logout():
 @app.route('/user/dashboard', methods=['GET', 'POST'])
 @login_required
 def user_dashboard():
-    if current_user.role == 'Admin':
-        abort(403)
-
     categories = Category.query.all()
+    tickets = Ticket.query.filter_by(user_id=current_user.id).order_by(Ticket.created_at.desc()).all()
 
     if request.method == 'POST':
         action = request.form.get('action')
+        ticket_id = request.form.get('ticket_id', type=int)
 
         if action == 'create':
-            title = request.form.get('title')
-            description = request.form.get('description')
+            # Create a new ticket
+            title = request.form.get('title', '').strip()
+            description = request.form.get('description', '').strip()
             category_id = request.form.get('category_id', type=int)
 
             if not title or not description or not category_id:
-                flash('Please fill all fields to create a ticket.', 'danger')
+                flash('All fields are required to create a ticket.', 'danger')
             else:
                 new_ticket = Ticket(
                     title=title,
                     description=description,
                     status='Open',
+                    category_id=category_id,
                     user_id=current_user.id,
-                    category_id=category_id
+                    created_at=datetime.utcnow()
                 )
                 db.session.add(new_ticket)
                 db.session.commit()
                 flash('Ticket created successfully.', 'success')
-            return redirect(url_for('user_dashboard'))
+                return redirect(url_for('user_dashboard'))
 
         elif action == 'update':
-            ticket_id = request.form.get('ticket_id', type=int)
-            ticket = Ticket.query.get_or_404(ticket_id)
-            if ticket.user_id != current_user.id:
-                abort(403)
+            # Update existing ticket if at least one field changed
+            ticket = Ticket.query.filter_by(id=ticket_id, user_id=current_user.id).first()
+            if not ticket:
+                flash('Ticket not found or access denied.', 'danger')
+                return redirect(url_for('user_dashboard'))
 
-            title = request.form.get('title')
-            description = request.form.get('description')
-            status = request.form.get('status')
+            title = request.form.get('title', '').strip()
+            description = request.form.get('description', '').strip()
             category_id = request.form.get('category_id', type=int)
 
-            if not title or not description or not status or not category_id:
-                flash('All fields are required to update the ticket.', 'danger')
+            if not title and not description and not category_id:
+                flash('No fields provided to update.', 'warning')
             else:
-                ticket.title = title
-                ticket.description = description
-                ticket.status = status
-                ticket.category_id = category_id
-                db.session.commit()
-                flash('Ticket updated successfully.', 'success')
-            return redirect(url_for('user_dashboard'))
+                updated = False
+                if title and title != ticket.title:
+                    ticket.title = title
+                    updated = True
+                if description and description != ticket.description:
+                    ticket.description = description
+                    updated = True
+                if category_id and category_id != ticket.category_id:
+                    ticket.category_id = category_id
+                    updated = True
+
+                if updated:
+                    db.session.commit()
+                    flash('Ticket updated successfully.', 'success')
+                else:
+                    flash('No changes detected to update.', 'info')
+
+                return redirect(url_for('user_dashboard'))
 
         elif action == 'add_comment':
-            ticket_id = request.form.get('ticket_id', type=int)
-            content = request.form.get('comment_content')
+            # Add a comment to a ticket
+            ticket = Ticket.query.filter_by(id=ticket_id, user_id=current_user.id).first()
+            if not ticket:
+                flash('Ticket not found or access denied.', 'danger')
+                return redirect(url_for('user_dashboard'))
 
-            ticket = Ticket.query.get(ticket_id)
-            if not ticket or ticket.user_id != current_user.id:
-                abort(403)
-
-            if not content:
-                flash('Comment cannot be empty.', 'danger')
+            comment_content = request.form.get('comment_content', '').strip()
+            if not comment_content:
+                flash('Comment cannot be empty.', 'warning')
             else:
                 comment = Comment(
-                    ticket_id=ticket_id,
+                    content=comment_content,
                     user_id=current_user.id,
-                    content=content
+                    ticket_id=ticket.id,
+                    created_at=datetime.utcnow()
                 )
                 db.session.add(comment)
                 db.session.commit()
-                flash('Comment added successfully.', 'success')
-            return redirect(url_for('user_dashboard'))
+                flash('Remark added successfully.', 'success')
+                return redirect(url_for('user_dashboard'))
 
-    tickets = Ticket.query.filter_by(user_id=current_user.id).all()
-
+    # Render user dashboard with tickets and categories
     return render_template('user_dashboard.html', tickets=tickets, categories=categories)
+
+
 @app.route('/show_users')
 def show_users():
     users = User.query.all()
     return '<br>'.join([f'{u.id} - {u.username} - {u.email} - {u.role}' for u in users])
 
+@app.route('/admin/create_ticket', methods=['GET', 'POST'])
+@login_required
+def admin_create_ticket():
+    if current_user.role.lower() != 'admin':
+        abort(403)
+
+    categories = Category.query.all()
+
+    if request.method == 'POST':
+        title = request.form.get('title')
+        description = request.form.get('description')
+        status = request.form.get('status', 'Open')
+        category_id = request.form.get('category_id', type=int)
+
+        if not title or not description or not category_id:
+            flash('All fields are required.', 'danger')
+        else:
+            new_ticket = Ticket(
+                title=title,
+                description=description,
+                status=status,
+                created_at=datetime.utcnow(),
+                user_id=current_user.id,  # Admin's user ID (must exist in User table)
+                category_id=category_id,
+                created_by='admin'  # new field to distinguish creator
+            )
+            db.session.add(new_ticket)
+            db.session.commit()
+            flash('Admin ticket created successfully.', 'success')
+            return redirect(url_for('admin_dashboard'))
+
+    return render_template('admin_create_ticket.html', categories=categories)
 
 if __name__ == '__main__':
     with app.app_context():
