@@ -377,7 +377,7 @@ def user_dashboard():
         category = Category.query.get(t.category_id)
         tickets_with_user.append((t, user.username if user else "Unassigned", category.name if category else "Unknown"))
 
-    return render_template('user_dashboard.html', tickets=tickets_with_user, categories=categories, selected_category=category_id)
+    return render_template('user_dashboard.html', tickets=tickets, categories=categories, selected_category=category_id)
 
 # User create ticket (separate from dashboard)
 @app.route('/user/create_ticket', methods=['GET', 'POST'])
