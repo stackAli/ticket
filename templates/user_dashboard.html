@@ -27,7 +27,9 @@
         {% endfor %}
       {% endif %}
     {% endwith %}
-
+     <div class="mb-3">
+      <a href="{{ url_for('user_create_ticket') }}" class="btn btn-primary">Create Ticket</a>
+    </div>     
     <h3>Create New Ticket</h3>
     <form method="POST" class="mb-4">
       <input type="hidden" name="action" value="create" />
