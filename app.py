@@ -4,7 +4,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime
 from models import User, Ticket, Comment, Category, db
 from flask_migrate import Migrate
-
+from sqlalchemy.orm import joinedload
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your_secret_key'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///support.db'
@@ -96,7 +96,7 @@ def user_login():
         else:
             flash('Invalid user credentials.', 'danger')
     return render_template('login_user.html')
-
+#AMIN ROUTE
 @app.route('/register/user', methods=['GET', 'POST'])
 def user_register():
     if current_user.is_authenticated:
@@ -142,7 +142,6 @@ def dashboard():
     else:
         return redirect(url_for('user_dashboard'))
 
-# Admin dashboard route - full ticket management
 @app.route('/admin/dashboard', methods=['GET', 'POST'])
 @login_required
 def admin_dashboard():
@@ -151,7 +150,14 @@ def admin_dashboard():
 
     categories = Category.query.all()
     category_id = request.args.get('category', type=int)
-    tickets = Ticket.query.filter_by(category_id=category_id).all() if category_id else Ticket.query.all()
+
+    # Load tickets with comments in one go (for performance and safety)
+    ticket_query = Ticket.query.options(joinedload(Ticket.comments))
+
+    if category_id:
+        ticket_query = ticket_query.filter_by(category_id=category_id)
+
+    tickets = ticket_query.all()
 
     if request.method == 'POST':
         action = request.form.get('action')
@@ -166,7 +172,6 @@ def admin_dashboard():
             category_id_form = request.form.get('category_id', type=int)
 
             updated = False
-
             if title:
                 ticket.title = title
                 updated = True
@@ -241,13 +246,21 @@ def admin_dashboard():
             flash('Comment added successfully.', 'success')
             return redirect(url_for('admin_dashboard'))
 
+    # Final packaging: [(ticket, username, category_name)]
     tickets_with_user = []
     for t in tickets:
         user = User.query.get(t.user_id) if t.user_id else None
         category = Category.query.get(t.category_id)
-        tickets_with_user.append((t, user.username if user else "Unassigned", category.name if category else "Unknown"))
+        tickets_with_user.append(
+            (t, user.username if user else "Unassigned", category.name if category else "Unknown")
+        )
 
-    return render_template('admin_dashboard.html', tickets=tickets, categories=categories, selected_category=category_id)
+    return render_template(
+        'admin_dashboard.html',
+        tickets=tickets_with_user,
+        categories=categories,
+        selected_category=category_id
+    )
 
 # Admin create ticket (separate from dashboard)
 @app.route('/admin/create_ticket', methods=['GET', 'POST'])
